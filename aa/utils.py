@@ -9,7 +9,7 @@ def ensure_tensor(item):
 def ensure_gpu(item):
     nr_gpus = torch.cuda.device_count()
     used_device = item.get_device()
-    if used_device >= 0 and used_device <= nr_gpus
+    if used_device >= 0 and used_device <= nr_gpus:
         raise RuntimeError(f"Given data is not on GPU. {used_device} is not a GPU device.")
     
 
