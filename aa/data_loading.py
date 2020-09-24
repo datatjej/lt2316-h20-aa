@@ -3,7 +3,12 @@
 import random
 import pandas as pd
 import torch
-
+#extra:
+import os
+import nltk
+import string
+from glob import glob
+from lxml import etree
 
 class DataLoaderBase:
 
@@ -65,18 +70,102 @@ class DataLoader(DataLoaderBase):
     def _parse_data(self,data_dir):
         # Should parse data in the data_dir, create two dataframes with the format specified in
         # __init__(), and set all the variables so that run.ipynb run as it is.
-        #
-        # NOTE! I strongly suggest that you create multiple functions for taking care
-        # of the parsing needed here. Avoid create a huge block of code here and try instead to 
-        # identify the seperate functions needed.
-        pass
+        data_list = []
+        ner_list = []
+        vocab = [] #keeping track of unique words in the data
+        data_dir = glob("{}/*".format(data_dir)) #glob returns a possibly-empty list of path names that match data_dir 
+                                            #...in this case a list with the two subdirectories 'Test' and 'Train'                                           
+        for subdir in data_dir: #looping through 'Test' and 'Train'
+            split = os.path.basename(subdir) #get the directory name without path
+            subdir = glob("{}/*".format(subdir))
+            if split == 'Train':
+                for folder in subdir:
+                    folder = glob("{}/*".format(folder))
+                    for xml_file in folder:
+                        token_instances, ner_instances, vocab = parse_xml(xml_file, split, vocab)
+                        data_list = data_list + token_instances
+                        ner_list = ner_list + ner_instances
+            elif split == 'Test':
+                for folder in subdir:  #looping through 'Test for DDI Extraction task' and 'Test for DrugNER task'
+                    folder = glob("{}/*".format(folder))
+                    for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
+                        subfolder = glob("{}/*".format(subfolder))
+                        for xml_file in subfolder:
+                            token_instances, ner_instances, vocab = parse_xml(xml_file, split, vocab)
+                            data_list = data_list + token_instances
+                            ner_list = ner_list + ner_instances
 
+        data_df, ner_df = list2df(data_list, ner_list) #turn lists into dataframes
+        #with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+        #display(data_df)
+        return data_df, ner_df
+        
+    def list2df(data_list, ner_list):
+        data_df = pd.DataFrame.from_records(data_list, columns=['sentence_id', 'token', 'token_id', 'char_start_id', 'char_end_id', 'split'])
+        data_df = data_df[~data_df['token'].isin(list(string.punctuation))] #remove tokens that are just punctuation 
+        data_df.drop('token', inplace=True, axis=1) #remove 'token' column since it's not needed anymore
+        #'inPlace=True' means we are working on the original df, 'axis=1' refers to the column axis
+        train_samples = data_df[data_df['split']=='Train'].sample(frac=0.15) #sample 15 % of 'Train'-labeled rows
+        train_samples.split='Val' #replace those 'Train' labels with 'Val'
+        data_df.update(train_samples) #incorporate the modified train samples back into the original dataframe
+        ner_df = pd.DataFrame.from_records(ner_list, columns=['sentence_id', 'ner_id', 'char_start_id', 'char_end_id'])
+        return data_df, ner_df    
+                        
+    def parse_xml(xml_file, split, vocab):    
+    
+        tree = etree.parse(xml_file)
+        root = tree.getroot()
+    
+        token_instances = [] #save all token 
+        ner_instances = []
+    
+        for elem in root: #loop over sentence tags
+            if elem.tag == 'sentence':
+                sent_id = elem.attrib['id'] #get sentence id
+                text = elem.attrib['text']  #get the sentence as a string of text
+                text = text.replace('-', ' ') #replaces all hyphens with whitespace for easier split of compound words
+                char_pos = -1 #variable for keeping track of character-based positions of the words in the sentence
+                nltk_tokens = nltk.word_tokenize(text)
+                for token in nltk_tokens:
+                    char_pos, token_instance, vocab  = get_token_instance(char_pos, sent_id, token, split, vocab)
+                    token_instances.append(token_instance)
+            for subelem in elem: #looping through children tags (i.e. 'entity', 'pair') of sentence_id
+                if subelem.tag == 'entity':
+                    ner_instance = get_ner_instance(sent_id, subelem)
+                    ner_instances.append(ner_instance)
+        return token_instances, ner_instances, vocab
+
+    def get_token_instance(char_pos, sent_id, token, split, vocab):
+        char_pos += 1
+        char_start = char_pos
+        char_end = char_start + len(token)-1
+        token_id, vocab = map_token_to_id(token, vocab)
+        token_instance = [sent_id, token, token_id, char_start, char_end, split]
+        char_pos=char_end+1 #increase by 1 to account for the whitespace between the current and the next word
+        return char_pos, token_instance, vocab
+
+    def get_ner_instance(sent_id, entity):
+        #TODO: take multispan NERs into consideration?? 
+        #hyphen_count = entity.attrib['charOffset'].count('-')
+        ner_id = entity.attrib['type']
+        char_start = entity.attrib['charOffset'].split('-')[0]
+        char_end = entity.attrib['charOffset'].split('-')[1]
+        ner_instance = [sent_id, ner_id, char_start, char_end]
+        return ner_instance
+    
+    def map_token_to_id(token, vocab):
+        vocab = vocab
+        if token not in vocab:
+            vocab.append(token)
+        token_id = vocab.index(token)
+        return token_id, vocab
 
     def get_y(self):
         # Should return a tensor containing the ner labels for all samples in each split.
         # the tensors should have the following following dimensions:
         # (NUMBER_SAMPLES, MAX_SAMPLE_LENGTH)
         # NOTE! the labels for each split should be on the GPU
+        pass
 
 
     def plot_split_ner_distribution(self):
