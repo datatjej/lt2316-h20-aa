@@ -69,6 +69,7 @@ class DataLoader(DataLoaderBase):
     def _parse_data(self,data_dir):
         # Should parse data in the data_dir, create two dataframes with the format specified in
         # __init__(), and set all the variables so that run.ipynb run as it is.
+        self.id2ner = {0:'none', 1:'group', 2:'drug_n', 3:'drug', 4:'brand'}
         data_list = []
         ner_list = []
         self.vocab = [] #keeping track of unique words in the data
@@ -81,7 +82,7 @@ class DataLoader(DataLoaderBase):
                 for folder in subdir:
                     folder = glob("{}/*".format(folder))
                     for xml_file in folder:
-                        token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab)
+                        token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab, self.id2ner)
                         data_list = data_list + token_instances
                         for instance in ner_instances:
                                 if instance:
@@ -92,18 +93,18 @@ class DataLoader(DataLoaderBase):
                     for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
                         subfolder = glob("{}/*".format(subfolder))
                         for xml_file in subfolder:
-                            token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab)
+                            token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab, self.id2ner)
                             data_list = data_list + token_instances
                             for instance in ner_instances:
                                 if instance:
                                     ner_list.append(instance)
-
+                                    
         self.data_df, self.ner_df = self.list2df(data_list, ner_list) #turn lists into dataframes
         #with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         #display(data_df)
         #return data_df, ner_df
     
-    def parse_xml(self, xml_file, split, vocab):    
+    def parse_xml(self, xml_file, split, vocab, id2ner):    
         tree = etree.parse(xml_file)
         root = tree.getroot()
     
@@ -122,7 +123,7 @@ class DataLoader(DataLoaderBase):
                     token_instances.append(token_instance)
             for subelem in elem: #looping through children tags (i.e. 'entity', 'pair') of sentence_id
                 if subelem.tag == 'entity':
-                    ner_instance = self.get_ner_instance(sent_id, subelem)
+                    ner_instance = self.get_ner_instance(sent_id, subelem, id2ner)
                     for instance in ner_instance: #loop through list of returned NER instances
                         ner_instances.append(instance) #save them individually in the ner_instances list
         return token_instances, ner_instances, vocab
@@ -148,7 +149,7 @@ class DataLoader(DataLoaderBase):
         char_pos=char_end+1 #increase by 1 to account for the whitespace between the current and the next word
         return char_pos, token_instance, vocab
 
-    def get_ner_instance(self, sent_id, entity):
+    def get_ner_instance(self, sent_id, entity, id2ner):
          #Problem of this approach: if a NER might be tokenized differently from the token dataframe
         ner_instances = []
         charOffset = entity.attrib['charOffset']
@@ -156,13 +157,15 @@ class DataLoader(DataLoaderBase):
         if ';' not in charOffset:
             char_start = charOffset.split('-')[0]
             char_end = charOffset.split('-')[1]
-            ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
+            ner_id = self.get_ner_id_as_int(entity.attrib['type'], id2ner)
+            #ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
             ner_instance = [sent_id, ner_id, char_start, char_end]
             return [ner_instance]
         #PATH OF DOOM: for multiword entities with several character spans:
         if ';' in charOffset:
             for span in charOffset.split(';'):
-                ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
+                ner_id = self.get_ner_id_as_int(entity.attrib['type'], id2ner)
+                #ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
                 char_start = span.split('-')[0]
                 char_end = span.split('-')[1]
                 ner_instance = [sent_id, ner_id, char_start, char_end]
@@ -176,6 +179,13 @@ class DataLoader(DataLoaderBase):
             vocab.append(token)
         token_id = vocab.index(token)
         return token_id, vocab
+    
+    def get_ner_id_as_int(self, ner_id, id2ner):
+        for key, value in id2ner.items(): 
+            if ner_id == value: 
+                return key 
+        else:
+            return "key doesn't exist"
 
     def get_y(self):
         # Should return a tensor containing the ner labels for all samples in each split.
@@ -184,7 +194,7 @@ class DataLoader(DataLoaderBase):
         # NOTE! the labels for each split should be on the GPU
         pass
 
-
+    
     def plot_split_ner_distribution(self):
         # should plot a histogram displaying ner label counts for each split
         pass
