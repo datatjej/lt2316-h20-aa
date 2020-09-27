@@ -69,10 +69,11 @@ class DataLoader(DataLoaderBase):
     def _parse_data(self,data_dir):
         # Should parse data in the data_dir, create two dataframes with the format specified in
         # __init__(), and set all the variables so that run.ipynb run as it is.
+        self.id2word = {}
         self.id2ner = {0:'none', 1:'group', 2:'drug_n', 3:'drug', 4:'brand'}
+        self.max_sample_length = 100
         data_list = []
         ner_list = []
-        self.vocab = [] #keeping track of unique words in the data
         data_dir = glob("{}/*".format(data_dir)) #glob returns a possibly-empty list of path names that match data_dir 
                                             #...in this case a list with the two subdirectories 'Test' and 'Train'                                           
         for subdir in data_dir: #looping through 'Test' and 'Train'
@@ -82,7 +83,7 @@ class DataLoader(DataLoaderBase):
                 for folder in subdir:
                     folder = glob("{}/*".format(folder))
                     for xml_file in folder:
-                        token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab, self.id2ner)
+                        token_instances, ner_instances, self.id2word = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
                         data_list = data_list + token_instances
                         for instance in ner_instances:
                                 if instance:
@@ -93,18 +94,19 @@ class DataLoader(DataLoaderBase):
                     for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
                         subfolder = glob("{}/*".format(subfolder))
                         for xml_file in subfolder:
-                            token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab, self.id2ner)
+                            token_instances, ner_instances, self.id2word = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
                             data_list = data_list + token_instances
                             for instance in ner_instances:
                                 if instance:
                                     ner_list.append(instance)
-                                    
+        
+        self.vocab = list(self.id2word.values()) #keeping track of unique words in the data                            
         self.data_df, self.ner_df = self.list2df(data_list, ner_list) #turn lists into dataframes
         #with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         #display(data_df)
         #return data_df, ner_df
     
-    def parse_xml(self, xml_file, split, vocab, id2ner):    
+    def parse_xml(self, xml_file, split, id2word, id2ner):    
         tree = etree.parse(xml_file)
         root = tree.getroot()
     
@@ -119,14 +121,14 @@ class DataLoader(DataLoaderBase):
                 char_pos = -1 #variable for keeping track of character-based positions of the words in the sentence
                 nltk_tokens = nltk.word_tokenize(text)
                 for token in nltk_tokens:
-                    char_pos, token_instance, vocab  = self.get_token_instance(char_pos, sent_id, token, split, vocab)
+                    char_pos, token_instance, id2word  = self.get_token_instance(char_pos, sent_id, token, split, id2word)
                     token_instances.append(token_instance)
             for subelem in elem: #looping through children tags (i.e. 'entity', 'pair') of sentence_id
                 if subelem.tag == 'entity':
                     ner_instance = self.get_ner_instance(sent_id, subelem, id2ner)
                     for instance in ner_instance: #loop through list of returned NER instances
                         ner_instances.append(instance) #save them individually in the ner_instances list
-        return token_instances, ner_instances, vocab
+        return token_instances, ner_instances, id2word
         
         
     def list2df(self, data_list, ner_list):
@@ -140,14 +142,14 @@ class DataLoader(DataLoaderBase):
         ner_df = pd.DataFrame.from_records(ner_list, columns=['sentence_id', 'ner_id', 'char_start_id', 'char_end_id'])
         return data_df, ner_df    
 
-    def get_token_instance(self, char_pos, sent_id, token, split, vocab):
+    def get_token_instance(self, char_pos, sent_id, token, split, id2word):
         char_pos += 1
         char_start = char_pos
         char_end = char_start + len(token)-1
-        token_id, vocab = self.map_token_to_id(token, vocab)
+        token_id, id2word = self.map_token_to_id(token, id2word)
         token_instance = [sent_id, token, token_id, char_start, char_end, split]
         char_pos=char_end+1 #increase by 1 to account for the whitespace between the current and the next word
-        return char_pos, token_instance, vocab
+        return char_pos, token_instance, id2word
 
     def get_ner_instance(self, sent_id, entity, id2ner):
          #Problem of this approach: if a NER might be tokenized differently from the token dataframe
@@ -173,12 +175,16 @@ class DataLoader(DataLoaderBase):
                 #print("SPECIAL NER_INSTANCE: ", ner_instance)
         return ner_instances
     
-    def map_token_to_id(self, token, vocab):
-        vocab = vocab
-        if token not in vocab:
-            vocab.append(token)
-        token_id = vocab.index(token)
-        return token_id, vocab
+    def map_token_to_id(self, token, id2word):
+        res = False
+        for key in id2word: 
+            if(id2word[key] == token):
+                res = True
+                return key, id2word
+        if res == False:
+            token_id = len(id2word)+1
+            id2word[token_id] = token
+            return token_id, id2word
     
     def get_ner_id_as_int(self, ner_id, id2ner):
         for key, value in id2ner.items(): 
