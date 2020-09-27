@@ -5,7 +5,6 @@ import pandas as pd
 import torch
 #extra:
 import os
-import re 
 import nltk
 import string
 from glob import glob
@@ -72,7 +71,7 @@ class DataLoader(DataLoaderBase):
         # __init__(), and set all the variables so that run.ipynb run as it is.
         data_list = []
         ner_list = []
-        vocab = [] #keeping track of unique words in the data
+        self.vocab = [] #keeping track of unique words in the data
         data_dir = glob("{}/*".format(data_dir)) #glob returns a possibly-empty list of path names that match data_dir 
                                             #...in this case a list with the two subdirectories 'Test' and 'Train'                                           
         for subdir in data_dir: #looping through 'Test' and 'Train'
@@ -82,7 +81,7 @@ class DataLoader(DataLoaderBase):
                 for folder in subdir:
                     folder = glob("{}/*".format(folder))
                     for xml_file in folder:
-                        token_instances, ner_instances, vocab = self.parse_xml(xml_file, split, vocab)
+                        token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab)
                         data_list = data_list + token_instances
                         for instance in ner_instances:
                                 if instance:
@@ -93,7 +92,7 @@ class DataLoader(DataLoaderBase):
                     for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
                         subfolder = glob("{}/*".format(subfolder))
                         for xml_file in subfolder:
-                            token_instances, ner_instances, vocab = self.parse_xml(xml_file, split, vocab)
+                            token_instances, ner_instances, self.vocab = self.parse_xml(xml_file, split, self.vocab)
                             data_list = data_list + token_instances
                             for instance in ner_instances:
                                 if instance:
@@ -108,7 +107,7 @@ class DataLoader(DataLoaderBase):
         tree = etree.parse(xml_file)
         root = tree.getroot()
     
-        token_instances = [] #save all token 
+        token_instances = [] 
         ner_instances = []
     
         for elem in root: #loop over sentence tags
