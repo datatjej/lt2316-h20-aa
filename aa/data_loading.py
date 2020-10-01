@@ -261,7 +261,7 @@ class DataLoader(DataLoaderBase):
                 padded_sentence_labels = self.get_padding(sentence_labels)
                 labels.append(padded_sentence_labels)
                 sentence_labels = []  
-                
+                 
         return labels 
 
     def get_sample_lengths(self):
