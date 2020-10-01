@@ -102,6 +102,7 @@ class DataLoader(DataLoaderBase):
         
         self.vocab = list(self.id2word.values()) #keeping track of unique words in the data                            
         self.data_df, self.ner_df = self.list2df(data_list, ner_list) #turn lists into dataframes
+        self.max_sample_length, self.sample_lengths_dict = self.get_sample_lengths()
         #with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         #display(data_df)
         #return data_df, ner_df
@@ -132,22 +133,22 @@ class DataLoader(DataLoaderBase):
         
         
     def list2df(self, data_list, ner_list):
-        data_df = pd.DataFrame.from_records(data_list, columns=['sentence_id', 'token', 'token_id', 'char_start_id', 'char_end_id', 'split'])
-        data_df = data_df[~data_df['token'].isin(list(string.punctuation))] #remove tokens that are just punctuation 
-        data_df.drop('token', inplace=True, axis=1) #remove 'token' column since it's not needed anymore
-        #'inPlace=True' means we are working on the original df, 'axis=1' refers to the column axis
-        train_samples = data_df[data_df['split']=='Train'].sample(frac=0.15) #sample 15 % of 'Train'-labeled rows
-        train_samples.split='Val' #replace those 'Train' labels with 'Val'
-        data_df.update(train_samples) #incorporate the modified train samples back into the original dataframe
+        data_df = pd.DataFrame.from_records(data_list, columns=['sentence_id', 'token_id', 'char_start_id', 'char_end_id', 'split'])
+        train_df = data_df[data_df['split']=='Train'] #extract the Train rows from data_df
+        unique_sent_in_train = list(train_df['sentence_id'].unique()) #get unique sentences in Train
+        val_sample_sentences = unique_sent_in_train[:int(len(unique_sent_in_train) * .15)] #extract 15% of those sentences
+        val_df = data_df[data_df['sentence_id'].isin(val_sample_sentences)] #make a Val dataframe with those sentence rows
+        val_df.split='Val' #rename the split column values in Val dataframe to 'Val'
+        data_df.update(val_df) #incorporate the val_df rows back into the original data_df
         ner_df = pd.DataFrame.from_records(ner_list, columns=['sentence_id', 'ner_id', 'char_start_id', 'char_end_id'])
         return data_df, ner_df    
-
+    
     def get_token_instance(self, char_pos, sent_id, token, split, id2word):
         char_pos += 1
         char_start = char_pos
         char_end = char_start + len(token)-1
         token_id, id2word = self.map_token_to_id(token, id2word)
-        token_instance = [sent_id, token, token_id, char_start, char_end, split]
+        token_instance = [sent_id, token_id, char_start, char_end, split]
         char_pos=char_end+1 #increase by 1 to account for the whitespace between the current and the next word
         return char_pos, token_instance, id2word
 
@@ -198,7 +199,88 @@ class DataLoader(DataLoaderBase):
         # the tensors should have the following following dimensions:
         # (NUMBER_SAMPLES, MAX_SAMPLE_LENGTH)
         # NOTE! the labels for each split should be on the GPU
-        pass
+        device = torch.device('cuda:1')
+    
+        # split data_df by Train, Val, Test
+        df_train = self.data_df[self.data_df.split=='Train']
+        print("Unique sent in Train: ", len(list(df_train['sentence_id'].unique()))) 
+        df_val = self.data_df[self.data_df.split=='Val']
+        print("Unique sent in Val: ", len(list(df_val['sentence_id'].unique()))) 
+        df_test = self.data_df[self.data_df.split=='Test']
+        print("Unique sent in Test: ", len(list(df_test['sentence_id'].unique()))) 
+    
+        #get labels
+        train_labels = self.label_tokens(df_train)
+        test_labels = self.label_tokens(df_test)
+        val_labels = self.label_tokens(df_val)
+        
+        #put labels into tensors:
+        train_tensor = torch.LongTensor(train_labels)
+        self.train_tensor = train_tensor.to(device)
+        
+        test_tensor = torch.LongTensor(test_labels)
+        self.test_tensor = test_tensor.to(device)
+    
+    
+        val_tensor = torch.LongTensor(val_labels)
+        self.val_tensor = val_tensor.to(device)
+  
+        print("val labels:", len(val_labels))
+        print("test labels:", len(test_labels))
+        print("test labels:", len(train_labels))
+        return self.train_tensor, self.val_tensor, self.test_tensor
+    
+    def label_tokens(self, df):
+        print("labeling")
+        labels = []
+        
+        df_as_list = df.values.tolist()
+        print("len of df_as_list: ", len(df_as_list))
+        ner_df_as_list = self.ner_df.values.tolist()
+        print("len of ner_df_as_list: ", len(ner_df_as_list))
+    
+        sentence_labels = []
+        match_found_count = 0
+        for df_row in df_as_list:
+            sentence_id = df_row[0]
+            sentence_length = self.sample_lengths_dict[sentence_id]
+            match_found = False 
+            for ner_row in ner_df_as_list:
+                #compare sentence_id, char_start, char_end between df_row and ner_rows: 
+                if df_row[0] == ner_row[0]:
+                    if int(df_row[2]) == ner_row[2] and int(df_row[3]) == ner_row[3]:
+                        label = ner_row[1]
+                        match_found = True
+                        #print("match found: ", df_row, "<3", ner_row)
+                        sentence_labels.append(label)
+            if match_found == False:
+                label = 0
+                #print("match not found :(")
+                sentence_labels.append(label)
+            if len(sentence_labels) == sentence_length:
+                padded_sentence_labels = self.get_padding(sentence_labels)
+                labels.append(padded_sentence_labels)
+                sentence_labels = []  
+                
+        return labels 
+
+    def get_sample_lengths(self):
+        max_sample_length = max(self.data_df.groupby('sentence_id').size())
+        sample_lengths = self.data_df.groupby('sentence_id').size().tolist() 
+        unique_sentences = self.data_df['sentence_id'].unique() 
+        sentences_list = sorted(unique_sentences) 
+        sample_length_dict = {sentences_list[i]: sample_lengths[i] for i in range(len(sentences_list))} 
+        return max_sample_length, sample_length_dict
+
+    def get_padding(self, sentence_labels):
+        diff = self.max_sample_length - len(sentence_labels)
+        if int(diff) == 0:
+            print("wow the long sentence")
+            return sentence_labels
+        else:
+            padding = [0] * diff
+            sentence_labels.extend(padding)
+        return sentence_labels
 
     
     def plot_split_ner_distribution(self):
