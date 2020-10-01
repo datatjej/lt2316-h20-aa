@@ -161,7 +161,7 @@ class DataLoader(DataLoaderBase):
             char_end = charOffset.split('-')[1]
             ner_id = self.get_ner_id_as_int(entity.attrib['type'], id2ner)
             #ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
-            ner_instance = [sent_id, ner_id, char_start, char_end]
+            ner_instance = [sent_id, int(ner_id), int(char_start), int(char_end)]
             return [ner_instance]
         #PATH OF DOOM: for multiword entities with several character spans:
         if ';' in charOffset:
@@ -170,7 +170,7 @@ class DataLoader(DataLoaderBase):
                 #ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
                 char_start = span.split('-')[0]
                 char_end = span.split('-')[1]
-                ner_instance = [sent_id, ner_id, char_start, char_end]
+                ner_instance = [sent_id, int(ner_id), int(char_start), int(char_end)]
                 ner_instances.append(ner_instance)
                 #print("SPECIAL NER_INSTANCE: ", ner_instance)
         return ner_instances
