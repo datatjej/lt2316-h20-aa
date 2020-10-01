@@ -282,9 +282,37 @@ class DataLoader(DataLoaderBase):
             sentence_labels.extend(padding)
         return sentence_labels
 
-    
     def plot_split_ner_distribution(self):
         # should plot a histogram displaying ner label counts for each split
+        #id2ner = {0:'none', 1:'group', 2:'drug_n', 3:'drug', 4:'brand'}
+     
+        # divide df by splits and get unique sentences:
+        df_train = self.data_df[self.data_df.split=='Train']
+        train_sent = list(df_train['sentence_id'].unique())
+        df_val = self.data_df[self.data_df.split=='Val']
+        val_sent = list(df_val['sentence_id'].unique())
+        df_test = self.data_df[self.data_df.split=='Test']
+        test_sent = list(df_test['sentence_id'].unique())
+    
+        ner_df_as_list = self.ner_df.values.tolist()
+    
+        counts = {'Train': {'group': 0, 'drug_n': 0, 'drug': 0, 'brand':0}, 
+              'Val': {'group': 0, 'drug_n': 0, 'drug': 0, 'brand':0}, 
+              'Test': {'group': 0, 'drug_n': 0, 'drug': 0, 'brand':0}}
+        for ner in ner_df_as_list:
+            sent_id = ner[0]
+            ner_label = self.id2ner[ner[1]]
+            if sent_id in train_sent:
+                counts['Train'][ner_label] += 1
+            elif sent_id in val_sent:
+                counts['Val'][ner_label] += 1
+            elif sent_id in test_sent:
+                counts['Test'][ner_label] += 1
+                
+        #print(counts)
+        df = pd.DataFrame(counts)
+        df_to_plot = df.transpose()
+        df_to_plot.plot.bar()
         pass
 
 
