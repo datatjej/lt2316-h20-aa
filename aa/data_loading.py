@@ -102,7 +102,7 @@ class DataLoader(DataLoaderBase):
         
         self.vocab = list(self.id2word.values()) #keeping track of unique words in the data                            
         self.data_df, self.ner_df = self.list2df(data_list, ner_list) #turn lists into dataframes
-        self.max_sample_length, self.sample_lengths_dict = self.get_sample_lengths()
+        self.max_sample_length, self.sample_length_dict = self.get_sample_lengths()
         #with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         #display(data_df)
         #return data_df, ner_df
@@ -243,7 +243,7 @@ class DataLoader(DataLoaderBase):
         match_found_count = 0
         for df_row in df_as_list:
             sentence_id = df_row[0]
-            sentence_length = self.sample_lengths_dict[sentence_id]
+            sentence_length = self.sample_length_dict[sentence_id]
             match_found = False 
             for ner_row in ner_df_as_list:
                 #compare sentence_id, char_start, char_end between df_row and ner_rows: 
