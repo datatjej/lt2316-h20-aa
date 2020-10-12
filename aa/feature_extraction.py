@@ -93,7 +93,7 @@ def get_pos(df, max_sample_length, sample_lengths_dict, id2pos, id2word, split):
     
     return pos_sentences, id2pos
 
-def map_pos_to_id(pos, id2pos):
+def map_pos_to_id(pos, id2pos, split):
     res = False
     for key in id2pos:
         if(id2pos[key] == pos):
