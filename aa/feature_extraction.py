@@ -31,13 +31,13 @@ def extract_features(data:pd.DataFrame, max_sample_length:int,  sample_length_di
     #***************************************************************
     #max_sample_length, sample_length_dict = get_sample_lengths(data_df)
     
-    train_pos, id2pos = get_pos(df_train, max_sample_length, sample_length_dict, id2pos, id2word)
-    test_pos, id2pos = get_pos(df_test, max_sample_length, sample_length_dict, id2pos, id2word)
-    val_pos, id2pos = get_pos(df_val, max_sample_length, sample_length_dict, id2pos, id2word)
+    train_pos, id2pos = get_pos(df_train, max_sample_length, sample_length_dict, id2pos, id2word, 'Train')
+    test_pos, id2pos = get_pos(df_test, max_sample_length, sample_length_dict, id2pos, id2word, 'Test')
+    val_pos, id2pos = get_pos(df_val, max_sample_length, sample_length_dict, id2pos, id2word, 'Val')
     
-    print("val embeddings:", len(val_pos))
-    print("test embeddings:", len(test_pos))
-    print("train embeddings:", len(train_pos))
+    print("Val pos-tagged sent:", len(val_pos))
+    print("Test pos-tagged sent:", len(test_pos))
+    print("Train pos-tagged sent:", len(train_pos))
     
     #print("train labels:", len(train_labels))
     train_tensor = torch.LongTensor(train_pos)
@@ -56,7 +56,7 @@ def extract_features(data:pd.DataFrame, max_sample_length:int,  sample_length_di
     
     #return three tensor of the following dimensions: NUMBER_SAMPLES, MAX_SAMPLE_LENGTH, FEATURE_DIM
 
-def get_pos(df, max_sample_length, sample_lengths_dict, id2pos, id2word):
+def get_pos(df, max_sample_length, sample_lengths_dict, id2pos, id2word, split):
     
     pos_sentences = []
     
@@ -83,7 +83,7 @@ def get_pos(df, max_sample_length, sample_lengths_dict, id2pos, id2word):
             #print("POS_TAGGED SENT:", pos_tagged_sent) 
             pos_id_sent = []
             for pos_tuple in pos_tagged_sent:
-                pos_id, id2pos = map_pos_to_id(pos_tuple[1], id2pos)
+                pos_id, id2pos = map_pos_to_id(pos_tuple[1], id2pos, split)
                 #print("pos_tuple[1]", pos_tuple[1])
                 pos_id_sent.append(pos_id)
             #print("POS_ID SENT:", pos_id_sent)
@@ -100,8 +100,12 @@ def map_pos_to_id(pos, id2pos):
             res = True
             return key, id2pos
     if res == False:
-        pos_id = len(id2pos)+1
-        id2pos[pos_id] = pos
+        if split == 'Val' or 'Test':
+            #return default tag 'NN' = 1
+            return 1, id2pos
+        else:
+            pos_id = len(id2pos)+1
+            id2pos[pos_id] = pos
     return pos_id, id2pos
  
 def get_padding(sentence, max_sample_length):
@@ -115,13 +119,3 @@ def get_padding(sentence, max_sample_length):
         padding = [0] * diff
         sentence.extend(padding)
     return sentence
-
-#def get_sample_lengths(data_df):
-#    max_sample_length = max(data_df.groupby('sentence_id').size())
-#    sample_lengths = data_df.groupby('sentence_id').size().tolist() 
-#    unique_sentences = data_df['sentence_id'].unique() 
-#    sentences_list = sorted(unique_sentences) 
-#    sample_length_dict = {sentences_list[i]: sample_lengths[i] for i in range(len(sentences_list))} 
-#    #display(data_df.groupby('sentence_id').size().nlargest(5))
-#    #display(data_df.groupby('sentence_id').size()) 
-#    return max_sample_length, sample_length_dict

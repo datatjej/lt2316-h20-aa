@@ -71,7 +71,6 @@ class DataLoader(DataLoaderBase):
         # __init__(), and set all the variables so that run.ipynb run as it is.
         self.id2word = {}
         self.id2ner = {0:'none', 1:'group', 2:'drug_n', 3:'drug', 4:'brand'}
-        self.max_sample_length = 100
         data_list = []
         ner_list = []
         data_dir = glob("{}/*".format(data_dir)) #glob returns a possibly-empty list of path names that match data_dir 
@@ -83,22 +82,25 @@ class DataLoader(DataLoaderBase):
                 for folder in subdir:
                     folder = glob("{}/*".format(folder))
                     for xml_file in folder:
-                        token_instances, ner_instances, self.id2word = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
+                        token_instances, ner_instances, self.id2word, self.id2ner = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
                         data_list = data_list + token_instances
                         for instance in ner_instances:
                                 if instance:
                                     ner_list.append(instance)
             elif split == 'Test':
                 for folder in subdir:  #looping through 'Test for DDI Extraction task' and 'Test for DrugNER task'
-                    folder = glob("{}/*".format(folder))
-                    for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
-                        subfolder = glob("{}/*".format(subfolder))
-                        for xml_file in subfolder:
-                            token_instances, ner_instances, self.id2word = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
-                            data_list = data_list + token_instances
-                            for instance in ner_instances:
-                                if instance:
-                                    ner_list.append(instance)
+                    if os.path.basename(folder) == 'Test for DDI Extraction task':
+                        continue
+                    else:
+                        folder = glob("{}/*".format(folder))
+                        for subfolder in folder: #looping through 'DrugBank' and 'MedLine'
+                            subfolder = glob("{}/*".format(subfolder))
+                            for xml_file in subfolder:
+                                token_instances, ner_instances, self.id2word, self.id2ner = self.parse_xml(xml_file, split, self.id2word, self.id2ner)
+                                data_list = data_list + token_instances
+                                for instance in ner_instances:
+                                    if instance:
+                                        ner_list.append(instance)
         
         self.vocab = list(self.id2word.values()) #keeping track of unique words in the data                            
         self.data_df, self.ner_df = self.list2df(data_list, ner_list) #turn lists into dataframes
@@ -126,10 +128,10 @@ class DataLoader(DataLoaderBase):
                     token_instances.append(token_instance)
             for subelem in elem: #looping through children tags (i.e. 'entity', 'pair') of sentence_id
                 if subelem.tag == 'entity':
-                    ner_instance = self.get_ner_instance(sent_id, subelem, id2ner)
+                    ner_instance, id2ner = self.get_ner_instance(sent_id, subelem, id2ner)
                     for instance in ner_instance: #loop through list of returned NER instances
                         ner_instances.append(instance) #save them individually in the ner_instances list
-        return token_instances, ner_instances, id2word
+        return token_instances, ner_instances, id2word, id2ner
         
         
     def list2df(self, data_list, ner_list):
@@ -163,7 +165,7 @@ class DataLoader(DataLoaderBase):
             ner_id = self.get_ner_id_as_int(entity.attrib['type'], id2ner)
             #ner_id = entity.attrib['type'] #getting the label: 'brand', 'drug', 'drug_n' or 'group'
             ner_instance = [sent_id, int(ner_id), int(char_start), int(char_end)]
-            return [ner_instance]
+            return [ner_instance], id2ner
         #PATH OF DOOM: for multiword entities with several character spans:
         if ';' in charOffset:
             for span in charOffset.split(';'):
@@ -174,7 +176,7 @@ class DataLoader(DataLoaderBase):
                 ner_instance = [sent_id, int(ner_id), int(char_start), int(char_end)]
                 ner_instances.append(ner_instance)
                 #print("SPECIAL NER_INSTANCE: ", ner_instance)
-        return ner_instances
+        return ner_instances, id2ner
     
     def map_token_to_id(self, token, id2word):
         res = False
@@ -190,7 +192,7 @@ class DataLoader(DataLoaderBase):
     def get_ner_id_as_int(self, ner_id, id2ner):
         for key, value in id2ner.items(): 
             if ner_id == value: 
-                return key 
+                return key
         else:
             return "key doesn't exist"
 
@@ -199,6 +201,7 @@ class DataLoader(DataLoaderBase):
         # the tensors should have the following following dimensions:
         # (NUMBER_SAMPLES, MAX_SAMPLE_LENGTH)
         # NOTE! the labels for each split should be on the GPU
+
         device = torch.device('cuda:1')
     
         # split data_df by Train, Val, Test
@@ -211,36 +214,37 @@ class DataLoader(DataLoaderBase):
     
         #get labels
         train_labels = self.label_tokens(df_train)
-        test_labels = self.label_tokens(df_test)
+        print("Train labeled sent:", len(train_labels))
         val_labels = self.label_tokens(df_val)
+        print("Val labeled sent:", len(val_labels))
+        test_labels = self.label_tokens(df_test)
+        print("Test labeled sent:", len(test_labels))
+        
         
         #put labels into tensors:
         train_tensor = torch.LongTensor(train_labels)
         self.train_tensor = train_tensor.to(device)
         
-        test_tensor = torch.LongTensor(test_labels)
-        self.test_tensor = test_tensor.to(device)
-    
-    
         val_tensor = torch.LongTensor(val_labels)
         self.val_tensor = val_tensor.to(device)
-  
-        print("val labels:", len(val_labels))
-        print("test labels:", len(test_labels))
-        print("test labels:", len(train_labels))
+        
+        test_tensor = torch.LongTensor(test_labels)
+        self.test_tensor = test_tensor.to(device)
+        
+        
         return self.train_tensor, self.val_tensor, self.test_tensor
     
     def label_tokens(self, df):
-        print("labeling")
+        print("labeling...")
         labels = []
-        
         df_as_list = df.values.tolist()
-        print("len of df_as_list: ", len(df_as_list))
+        #print("len of df_as_list: ", len(df_as_list))
         ner_df_as_list = self.ner_df.values.tolist()
-        print("len of ner_df_as_list: ", len(ner_df_as_list))
+        #print("len of ner_df_as_list: ", len(ner_df_as_list))
+        #ner_per_sent = {}
     
         sentence_labels = []
-        match_found_count = 0
+        #match_found_count = 0
         for df_row in df_as_list:
             sentence_id = df_row[0]
             sentence_length = self.sample_length_dict[sentence_id]
@@ -251,6 +255,7 @@ class DataLoader(DataLoaderBase):
                     if int(df_row[2]) == ner_row[2] and int(df_row[3]) == ner_row[3]:
                         label = ner_row[1]
                         match_found = True
+                        #match_found_count += 1
                         #print("match found: ", df_row, "<3", ner_row)
                         sentence_labels.append(label)
             if match_found == False:
@@ -258,11 +263,13 @@ class DataLoader(DataLoaderBase):
                 #print("match not found :(")
                 sentence_labels.append(label)
             if len(sentence_labels) == sentence_length:
+                #ner_per_sent[sentence_id] = match_found_count
                 padded_sentence_labels = self.get_padding(sentence_labels)
                 labels.append(padded_sentence_labels)
-                sentence_labels = []  
+                sentence_labels = []
+                match_found_count = 0
                  
-        return labels 
+        return labels
 
     def get_sample_lengths(self):
         max_sample_length = max(self.data_df.groupby('sentence_id').size())
@@ -275,7 +282,7 @@ class DataLoader(DataLoaderBase):
     def get_padding(self, sentence_labels):
         diff = self.max_sample_length - len(sentence_labels)
         if int(diff) == 0:
-            print("wow the long sentence")
+            #print("wow the long sentence")
             return sentence_labels
         else:
             padding = [0] * diff
