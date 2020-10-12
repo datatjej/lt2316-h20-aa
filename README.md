@@ -5,10 +5,9 @@ Name: Tova Erbén
 *****************************************************************************
 NB: In order to run part 2 of the code on the MLTGPU, please do the following:
 
-{% highlight python %}
 >>> import nltk
 >>> nltk.download('averaged_perceptron_tagger')
-{% endhighlight %}
+
 *****************************************************************************
 
 
