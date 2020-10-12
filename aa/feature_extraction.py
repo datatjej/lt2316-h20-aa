@@ -36,6 +36,7 @@ def extract_features(data:pd.DataFrame, max_sample_length:int,  sample_length_di
     val_pos, id2pos = get_pos(df_val, max_sample_length, sample_length_dict, id2pos, id2word, 'Val')
     
     print("Val pos-tagged sent:", len(val_pos))
+    #print("Val[0]: ", val_pos[0])
     print("Test pos-tagged sent:", len(test_pos))
     print("Train pos-tagged sent:", len(train_pos))
     
@@ -71,23 +72,23 @@ def get_pos(df, max_sample_length, sample_lengths_dict, id2pos, id2word, split):
         sentence.append(token_id)
         if len(sentence) == sentence_length:
             #print("SENT:", len(sentence))
-            padded_sent = get_padding(sentence, max_sample_length)
             wordified_sent = []
-            for token_id in padded_sent:
+            for token_id in sentence:
                 if token_id in id2word.keys():
                     wordified_sent.append(id2word[token_id])
                 else:
-                    wordified_sent.append("PADDXNG")              
-            #print("WORDIFIED:", wordified_sent)
+                    wordified_sent.append("UNKNOWN")
             pos_tagged_sent = nltk.pos_tag(wordified_sent)
-            #print("POS_TAGGED SENT:", pos_tagged_sent) 
             pos_id_sent = []
             for pos_tuple in pos_tagged_sent:
                 pos_id, id2pos = map_pos_to_id(pos_tuple[1], id2pos, split)
                 #print("pos_tuple[1]", pos_tuple[1])
                 pos_id_sent.append(pos_id)
+            padded_sent = get_padding(pos_id_sent, max_sample_length)        
+            #print("WORDIFIED:", wordified_sent)
+            #print("POS_TAGGED SENT:", pos_tagged_sent) 
             #print("POS_ID SENT:", pos_id_sent)
-            pos_sentences.append(pos_id_sent)
+            pos_sentences.append(padded_sent)
             sentence_count +=1
             sentence = []
     
@@ -100,12 +101,12 @@ def map_pos_to_id(pos, id2pos, split):
             res = True
             return key, id2pos
     if res == False:
-        if split == 'Val' or 'Test':
+        #if split == 'Val' or 'Test':
             #return default tag 'NN' = 1
-            return 1, id2pos
-        else:
-            pos_id = len(id2pos)+1
-            id2pos[pos_id] = pos
+            #return '1', id2pos
+        #else:
+        pos_id = len(id2pos)+1
+        id2pos[pos_id] = pos
     return pos_id, id2pos
  
 def get_padding(sentence, max_sample_length):
